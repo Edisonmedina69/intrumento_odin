@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Instrumento ODIN – Salud v7</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  .cell{padding:.6rem .75rem;vertical-align:middle}
+  .muted{opacity:.45;pointer-events:none}
+  .pill{border-radius:999px;padding:.1rem .5rem}
+  textarea,input,select{outline:none}
+  .chart-wrap{position:relative;width:100%;max-width:640px;margin-inline:auto;height:220px}
+  .score-0 { color: #dc2626; font-weight: bold; }
+  .score-0_5 { color: #d97706; font-weight: bold; }
+  .score-1 { color: #16a34a; font-weight: bold; }
+  .tooltip {
+    position: relative;
+    cursor: help;
+  }
+  .tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 5px 10px;
+    background: #1e293b;
+    color: white;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s, visibility 0.3s;
+    z-index: 100;
+  }
+  .tooltip:hover::after {
+    opacity: 1;
+    visibility: visible;
+  }
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-800">
+<div class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+  <header class="mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+    <div>
+      <h1 class="text-3xl md:text-4xl font-bold">🏥 Instrumento de Evaluación ODIN – Salud <span class="text-sm font-semibold text-indigo-600">v7</span></h1>
+      <p class="text-gray-600">ODIN 2024/25 · Escala 0/0.5/1 · C1 habilita Cobertura · C2–C5 ≤ C1 · País pequeño excluye C4–C5 (denominador 8)</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <button id="btnExcel" type="button" class="bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2 rounded-lg">⬇️ Excel</button>
+      <button id="btnPDF"   type="button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-lg">⬇️ PDF</button>
+    </div>
+  </header>
+
+  <!-- Metadatos -->
+  <section class="bg-white p-5 rounded-lg shadow-sm mb-6" id="meta">
+    <h2 class="text-xl font-semibold mb-3">Metadatos del Dataset</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div><label class="text-sm text-gray-600">ID</label><input class="w-full mt-1 p-2 border rounded" id="m-id"></div>
+      <div><label class="text-sm text-gray-600">Dataset</label><input class="w-full mt-1 p-2 border rounded" id="m-dataset"></div>
+      <div><label class="text-sm text-gray-600">Organización</label><input class="w-full mt-1 p-2 border rounded" id="m-org"></div>
+      <div><label class="text-sm text-gray-600">URL del Dataset</label><input class="w-full mt-1 p-2 border rounded" id="m-url"></div>
+      <div><label class="text-sm text-gray-600">Fecha publicación</label><input type="date" class="w-full mt-1 p-2 border rounded" id="m-fpub"></div>
+      <div><label class="text-sm text-gray-600">Fecha modificación</label><input type="date" class="w-full mt-1 p-2 border rounded" id="m-fmod"></div>
+      <div><label class="text-sm text-gray-600">Etiquetas/Grupo</label><input class="w-full mt-1 p-2 border rounded" id="m-tags"></div>
+      <div><label class="text-sm text-gray-600">Categoría ODIN</label><input class="w-full mt-1 p-2 border rounded" id="m-cat" readonly></div>
+      <div><label class="text-sm text-gray-600">Fecha revisión</label><input type="date" class="w-full mt-1 p-2 border rounded" id="m-frev"></div>
+    </div>
+    <div class="mt-4 flex items-center gap-2">
+      <input type="checkbox" id="smallCountry" class="h-5 w-5 text-teal-600">
+      <label for="smallCountry" class="text-gray-700">País pequeño <span class="pill bg-teal-50 text-teal-700 border border-teal-200">excluye C4 y C5 (denominador ↓ 10 a 8)</span></label>
+    </div>
+  </section>
+
+  <!-- Requisitos seleccionables -->
+  <section class="bg-white p-5 rounded-lg shadow-sm mb-6" id="requisitos">
+    <h2 class="text-xl font-semibold mb-3">Requisitos por Categoría ODIN (seleccionable)</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+      <div>
+        <label class="text-sm text-gray-600">Categoría ODIN</label>
+        <select id="catSelect" class="w-full mt-1 p-2 border rounded">
+          <option value="Health Facilities">Health Facilities</option>
+          <option value="Health Outcomes">Health Outcomes</option>
+          <option value="Health Services">Health Services</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-sm text-gray-600">Indicadores mínimos (ejemplos)</label>
+        <textarea id="catIndic" class="w-full mt-1 p-2 border rounded" rows="2" readonly></textarea>
+      </div>
+      <div>
+        <label class="text-sm text-gray-600">Desagregaciones mínimas</label>
+        <textarea id="catDesag" class="w-full mt-1 p-2 border rounded" rows="2" readonly></textarea>
+      </div>
+    </div>
+    <div>
+      <label class="text-sm text-gray-600">Observaciones</label>
+      <textarea id="catObs" class="w-full mt-1 p-2 border rounded" rows="2" readonly></textarea>
+    </div>
+  </section>
+
+  <!-- Tabla ODIN -->
+  <section class="bg-white p-5 rounded-lg shadow-sm mb-6" id="tabla">
+    <h2 class="text-xl font-semibold mb-3">Evaluación</h2>
+    <div class="overflow-x-auto">
+      <table class="min-w-full border border-gray-200 text-sm">
+        <thead class="bg-gray-100 text-gray-700">
+          <tr>
+            <th class="cell font-semibold">Código</th>
+            <th class="cell font-semibold">Elemento</th>
+            <th class="cell font-semibold">Criterio de Validación</th>
+            <th class="cell font-semibold">Tipo</th>
+            <th class="cell font-semibold">Referencia ODIN</th>
+            <th class="cell font-semibold">Selección</th>
+            <th class="cell font-semibold">Puntuación</th>
+            <th class="cell font-semibold">Evidencia (URL/ref. oficial)</th>
+            <th class="cell font-semibold">Observaciones</th>
+          </tr>
+        </thead>
+        <tbody id="body">
+          <!-- C1–C5 -->
+          <tr data-key="C1" data-type="Cobertura">
+            <td class="cell font-medium">C1</td>
+            <td class="cell font-medium tooltip" data-tooltip="¿El dataset incluye indicadores y desagregaciones requeridas?">Indicadores y desagregación</td>
+            <td class="cell">¿Tiene desagregación por sexo? ¿Tiene desagregación por tipo de enfermedades?</td>
+            <td class="cell">Cobertura</td>
+            <td class="cell">Páginas 28-29</td>
+            <td class="cell"><select class="sel border rounded p-1 w-full"><option value="0">No</option><option value="0.5">Parcial</option><option value="1">Sí</option></select></td>
+            <td class="cell score">0</td>
+            <td class="cell"><input class="w-full p-2 border rounded evidence-input" placeholder="URL, captura, justificación"/></td>
+            <td class="cell"><input class="w-full p-2 border rounded" placeholder="Observaciones adicionales"/></td>
+          </tr>
+          <tr data-key="C2" data-type="Cobertura">
+            <td class="cell font-medium">C2</td>
+            <td class="cell font-medium tooltip" data-tooltip="¿El dataset incluye datos de los últimos 5 años?">Datos últimos 5 años</td>
+            <td class="cell">≥3 años 2019–2023 (sub-anual: mayoría)</td>
+            <td class="cell">Cobertura</td>
+            <td class="cell">Página 10</td>
+            <td class="cell"><select class="sel border rounded p-1 w-full"><option value="0">No</option><option value="0.5">Parcial</option><option value="1">Sí</option></select></td>
+            <td class="cell score">0</td>
+            <td class="cell"><input class="w-full p-2 border rounded evidence-input" placeholder="URL, captura, justificación"/></td>
+            <td class="cell"><input class="w-full p-2 border rounded" placeholder="Observaciones adicionales"/></td>
+          </tr>
+          <tr data-key="C3" data-type="Cobertura">
+            <td class="cell font-medium">C3</td>
+            <td class="cell font-medium tooltip" data-tooltip="¿El dataset incluye datos históricos de al menos 10 años?">Datos históricos ≥10 años</td>
+            <td class="cell">≥6 años 2014–2023</td>
+            <td class="cell">Cobertura</td>
+            <td class="cell">Página 11</td>
+            <td class="cell"><select class="sel border rounded p-1 w-full"><option value="0">No</option><option value="0.5">Parcial</option><option value="1">Sí</option></select></td>
+            <td class="cell score">0</td>
+            <td class="cell"><input class="w-full p-2 border rounded evidence-input" placeholder="URL, captura, justificación"/></td>
+            <td class="cell"><input class="w-full p-2 border rounded" placeholder="Observaciones adicionales"/></td>
+          </tr>
+          <tr data-key="C4" data-type="Cobertura">
+            <td class="cell font-medium">C4</td>
+            <td class="cell font-medium tooltip" data-tooltip="¿El dataset incluye datos a nivel subnacional 1 (departamentos)?">Nivel subnacional 1</td>
+            <td class="cell">¿Incluye mayoría de departamentos?</td>
+            <td class="cell">Cobertura</td>
+            <td class="cell">Páginas 12-13</td>
+            <td class="cell"><select class="sel border rounded p-1 w-full"><option value="0">No</option><option value="0.5">Parcial</option><option value="1">Sí</option></select></td>
+            <td class="cell score">0</td>
+            <td class="cell"><input class="w-full p-2 border rounded evidence-input" placeholder="URL, captura, justificación"/></td>
+            <td class="cell"><input class="w-full p-2 border rounded" placeholder="Observaciones adicionales"/></td>
+          </tr>
+          <tr data-key="C5" data-type="Cobertura">
+            <td class="cell font-medium">C5</td>
+            <td class="cell font-medium tooltip" data-tooltip="¿El dataset incluye datos a nivel subnacional 2 (distritos)?">Nivel Subnacional 2</td>
+            <td class="cell">¿Incluye ≥80% de distritos (mayoría)?</td>
+            <td class="cell">Cobertura</td>
+            <td class="cell">Páginas 13-14</td>
+            <td class="cell"><select class="sel border rounded p-1 w-full"><option value="0">No</option><option value="0.5">Parcial</option><option value="1">Sí</option></select></td>
+            <td class="cell score">0</td>
+            <td class="cell"><input class="w-full p-2 border rounded evidence-input" placeholder="URL, captura, justificación"/></td>
+            <td class="cell"><input class="w-full p-2 border rounded" placeholder="Observaciones adicionales"/></td>
+          </tr>
+          <!-- A1–A5 -->
+          <tr data-key="A1" data-type="Apertura">
+            <td class="cell font-medium">A1</td>
+            <td class="cell font-medium tooltip" data-tooltip="¿El dataset está disponible en formato legible por máquina?">Formato legible por máquina</td>
+            <td class="cell">CSV/JSON/XML/XLS(X)/TXT/Stata/SAS/SPSS</td>
+            <td class="cell">Apertura</td>
+            <td class="cell">Página 15</td>
+            <td class="cell"><select class="sel border rounded p-1 w-full"><option value="0">No</option><option value="0.5">Parcial</option><option value="1">Sí</option></select></td>
+            <td class="cell score">0</td>
+            <td class="cell"><input class="w-full p-2 border rounded evidence-input" placeholder="URL, captura, justificación"/></td>
+            <td class="cell"><input class="w-full p-2 border rounded" placeholder="Observaciones adicionales"/></td>
+          </tr>
+          <tr data-key="A2" data-type="Apertura">
+            <td class="cell font-medium">A2</td>
+            <td class="cell font-medium tooltip" data-tooltip="¿El dataset está disponible en formato no propietario?">Formato no propietario</td>
+            <td class="cell">Preferir CSV/JSON/XML/TXT (evitar .rar/.exe)</td>
+            <td class="cell">Apertura</td>
+            <td class="cell">Página 16</td>
+            <td class="cell"><select class="sel border rounded p-1 w-full"><option value="0">No</option><option value="0.5">Parcial</option><option value="1">Sí</option></select></td>
+            <td class="cell score">0</td>
+            <td class="cell"><input class="w-full p-2 border rounded evidence-input" placeholder="URL, captura, justificación"/></td>
+            <td class="cell"><input class="w-full p-2 border rounded" placeholder="Observaciones adicionales"/></td>
+          </tr>
+          <tr data-key="A3" data-type="Apertura">
+            <td class="cell font-medium">A3</td>
+            <td class="cell font-medium tooltip" data-tooltip="¿El dataset ofrece opciones de descarga adecuadas?">Opciones de descarga</td>
+            <td class="cell">Descarga masiva + API o personalizable</td>
+            <td class="cell">Apertura</td>
+            <td class="cell">Página 17</td>
+            <td class="cell"><select class="sel border rounded p-1 w-full"><option value="0">No</option><option value="0.5">Parcial</option><option value="1">Sí</option></select></td>
+            <td class="cell score">0</td>
+            <td class="cell"><input class="w-full p-2 border rounded evidence-input" placeholder="URL, captura, justificación"/></td>
+            <td class="cell"><input class="w-full p-2 border rounded" placeholder="Observaciones adicionales"/></td>
+          </tr>
+          <tr data-key="A4" data-type="Apertura">
+            <td class="cell font-medium">A4</td>
+            <td class="cell font-medium tooltip" data-tooltip="¿El dataset incluye metadatos de referencia completos?">Metadatos de referencia</td>
+            <td class="cell">Definición + fecha exacta + fuente/área</td>
+            <td class="cell">Apertura</td>
+            <td class="cell">Página 18</td>
+            <td class="cell"><select class="sel border rounded p-1 w-full"><option value="0">No</option><option value="0.5">Parcial</option><option value="1">Sí</option></select></td>
+            <td class="cell score">0</td>
+            <td class="cell"><input class="w-full p-2 border rounded evidence-input" placeholder="URL, captura, justificación"/></td>
+            <td class="cell"><input class="w-full p-2 border rounded" placeholder="Observaciones adicionales"/></td>
+          </tr>
+          <tr data-key="A5" data-type="Apertura">
+            <td class="cell font-medium">A5</td>
+            <td class="cell font-medium tooltip" data-tooltip="¿El dataset tiene una licencia abierta?">Licencia abierta</td>
+            <td class="cell">Permite uso comercial + atribución (ej. CC-BY)</td>
+            <td class="cell">Apertura</td>
+            <td class="cell">Páginas 19-20</td>
+            <td class="cell"><select class="sel border rounded p-1 w-full"><option value="0">No</option><option value="0.5">Parcial</option><option value="1">Sí</option></select></td>
+            <td class="cell score">0</td>
+            <td class="cell"><input class="w-full p-2 border rounded evidence-input" placeholder="URL, captura, justificación"/></td>
+            <td class="cell"><input class="w-full p-2 border rounded" placeholder="Observaciones adicionales"/></td>
+          </tr>
+
+          <!-- Subtotales / Total -->
+          <tr class="bg-gray-50">
+            <td colspan="6" class="cell text-right font-semibold">Subtotal Cobertura</td>
+            <td class="cell font-bold" id="subCob">0</td>
+            <td colspan="2" class="cell"></td>
+          </tr>
+          <tr class="bg-gray-50">
+            <td colspan="6" class="cell text-right font-semibold">Subtotal Apertura</td>
+            <td class="cell font-bold" id="subApe">0</td>
+            <td colspan="2" class="cell"></td>
+          </tr>
+          <tr class="bg-gray-100">
+            <td colspan="6" class="cell text-right font-semibold">TOTAL</td>
+            <td class="cell font-bold" id="total">0</td>
+            <td colspan="2" class="cell"></td>
+          </tr>
+          <tr class="bg-gray-100">
+            <td colspan="6" class="cell text-right font-semibold">% Cumplimiento</td>
+            <td class="cell font-bold" id="pct">0%</td>
+            <td colspan="2" class="cell text-xs text-gray-500" id="denInfo"></td>
+          </tr>
+          <tr class="bg-gray-100">
+            <td colspan="6" class="cell text-right font-semibold">Nivel</td>
+            <td class="cell font-bold" id="nivel">DEFICIENTE</td>
+            <td colspan="2" class="cell"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Resumen visual (compacto) -->
+  <section class="bg-white p-5 rounded-lg shadow-sm mb-6" id="panelResultados">
+    <h2 class="text-xl font-semibold mb-3">Resumen visual</h2>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-gray-50 p-4 rounded-md">
+        <h3 class="font-semibold mb-2">Puntaje por bloque</h3>
+        <div class="chart-wrap"><canvas id="barChart"></canvas></div>
+      </div>
+      <div class="bg-gray-50 p-4 rounded-md">
+        <h3 class="font-semibold mb-2">Distribución por criterio</h3>
+        <div class="chart-wrap"><canvas id="radarChart"></canvas></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // ——— Categorías seleccionables
+  const categorias = {
+    "Health Facilities": {
+      indic: "Nº establecimientos; camas; personal por tipo",
+      desag: "Región/departamento; tipo establecimiento; público/privado",
+      obs:   "Si no hay todos, documentar en Evidencia."
+    },
+    "Health Outcomes": {
+      indic: "Mortalidad (infantil, materna); incidencia por enfermedad prioritaria",
+      desag: "Sexo; edad; región",
+      obs:   "Usar definiciones OMS si están en metadatos."
+    },
+    "Health Services": {
+      indic: "Cobertura de vacunación; consultas; egresos hospitalarios",
+      desag: "Edad; grupo de riesgo; región",
+      obs:   "Series mensuales: exigir mayoría de meses por año."
+    }
+  };
+  const catSelect = document.getElementById('catSelect');
+  const catIndic  = document.getElementById('catIndic');
+  const catDesag  = document.getElementById('catDesag');
+  const catObs    = document.getElementById('catObs');
+  const mCat      = document.getElementById('m-cat');
+  function renderCat(){ const c = categorias[catSelect.value]; catIndic.value=c.indic; catDesag.value=c.desag; catObs.value=c.obs; mCat.value=catSelect.value; }
+  catSelect.addEventListener('change', renderCat); renderCat();
+
+  // ——— Reglas ODIN y estado
+  const weights = {"0": 0, "0.5": 0.5, "1": 1};
+  const scores  = {}; // valores seleccionados (0/0.5/1)
+  const evidences = {}; // valores de evidencia
+  const observations = {}; // valores de observaciones
+  const els = {
+    subCob: document.getElementById('subCob'),
+    subApe: document.getElementById('subApe'),
+    total:  document.getElementById('total'),
+    pct:    document.getElementById('pct'),
+    denInfo:document.getElementById('denInfo'),
+    nivel:  document.getElementById('nivel'),
+    small:  document.getElementById('smallCountry')
+  };
+
+  // ——— Gráficos
+  const barChart = new Chart(document.getElementById('barChart').getContext('2d'),{
+    type:'bar',
+    data:{labels:['Cobertura','Apertura'],datasets:[{data:[0,0],backgroundColor:['rgba(34,197,94,.25)','rgba(59,130,246,.25)'],borderColor:['rgb(22,163,74)','rgb(37,99,235)'],borderWidth:1}]},
+    options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true,max:5}}, plugins:{legend:{display:false}}}
+  });
+  const radarChart = new Chart(document.getElementById('radarChart').getContext('2d'),{
+    type:'radar',
+    data:{labels:['C1','C2','C3','C4','C5','A1','A2','A3','A4','A5'],datasets:[{data:new Array(10).fill(0),backgroundColor:'rgba(99,102,241,.2)',borderColor:'rgb(79,70,229)'}]},
+    options:{responsive:true, maintainAspectRatio:false, scales:{r:{beginAtZero:true,max:1}}, plugins:{legend:{display:false}}}
+  });
+
+  function updateScoreClass(scoreCell, value) {
+    // Remove existing classes
+    scoreCell.classList.remove('score-0', 'score-0_5', 'score-1');
+    
+    // Add appropriate class based on value
+    if (value === 0) scoreCell.classList.add('score-0');
+    else if (value === 0.5) scoreCell.classList.add('score-0_5');
+    else if (value === 1) scoreCell.classList.add('score-1');
+  }
+
+  function applyC1Rule(){
+    const c1 = scores.C1 ?? 0;
+    ['C2','C3','C4','C5'].forEach(k=>{
+      const row = document.querySelector(`tr[data-key="${k}"]`);
+      const sel = row.querySelector('select');
+      if (c1 === 0){ 
+        sel.value='0'; 
+        sel.disabled=true; 
+        scores[k]=0; 
+        row.classList.add('muted'); 
+        const scoreCell = row.querySelector('.score');
+        scoreCell.textContent='0';
+        updateScoreClass(scoreCell, 0);
+      }
+      else{ 
+        if (!(els.small.checked && (k==='C4'||k==='C5'))){ 
+          sel.disabled=false; 
+          row.classList.remove('muted'); 
+        } 
+      }
+    });
+  }
+  
+  function applySmallCountry(){
+    const isSmall = els.small.checked;
+    ['C4','C5'].forEach(k=>{
+      const row = document.querySelector(`tr[data-key="${k}"]`);
+      const sel = row.querySelector('select');
+      if (isSmall){ 
+        row.classList.add('muted'); 
+        sel.disabled=true; 
+        scores[k]=0; 
+        const scoreCell = row.querySelector('.score');
+        scoreCell.textContent='0';
+        updateScoreClass(scoreCell, 0);
+      }
+      else if ((scores.C1??0)>0){ 
+        row.classList.remove('muted'); 
+        sel.disabled=false; 
+      }
+    });
+  }
+  
+  function maxPoints(){ 
+    let max=10; // 5 cobertura + 5 apertura
+    if(els.small.checked) max-=2; // Excluir C4 y C5 (cada uno vale 1 punto máximo)
+    return max; 
+  }
+  
+  const eff = k => Math.min(scores[k]??0, scores.C1??0); // C2–C5 ≤ C1
+
+  function validateEvidence(key, value) {
+    const evidenceInput = document.querySelector(`tr[data-key="${key}"] .evidence-input`);
+    if (value > 0 && (!evidenceInput.value || evidenceInput.value.trim() === '')) {
+      evidenceInput.classList.add('border-red-500');
+      evidenceInput.placeholder = '¡Evidencia requerida para puntuación > 0!';
+      return false;
+    } else {
+      evidenceInput.classList.remove('border-red-500');
+      evidenceInput.placeholder = 'URL, captura, justificación';
+      return true;
+    }
+  }
+
+  function recompute(){
+    // puntajes visibles (C2–C5 efectivos)
+    document.querySelectorAll('tr[data-key]').forEach(tr=>{
+      const k = tr.dataset.key; 
+      let v = scores[k]??0; 
+      if(['C2','C3','C4','C5'].includes(k)) v = eff(k);
+      
+      const scoreCell = tr.querySelector('.score');
+      scoreCell.textContent = v;
+      updateScoreClass(scoreCell, v);
+    });
+
+    // subtotales
+    let subCob = (scores.C1??0) + eff('C2') + eff('C3');
+    if(!els.small.checked){ subCob += eff('C4') + eff('C5'); }
+    let subApe = 0; 
+    ['A1','A2','A3','A4','A5'].forEach(k=> subApe += (scores[k]??0));
+
+    // total, % y nivel
+    let total = subCob + subApe;
+    const denom = maxPoints();
+    if((scores.C1??0) === 0){ total = 0; } // C1=0 → Total=0
+    const pct = Math.round((total/denom)*100);
+    els.subCob.textContent = subCob.toFixed(1); 
+    els.subApe.textContent = subApe.toFixed(1);
+    els.total.textContent = total.toFixed(1); 
+    els.pct.textContent = pct+'%'; 
+    els.denInfo.textContent = `Denominador: ${denom} pts`;
+    els.nivel.textContent = pct>=80?'EXCELENTE': pct>=60?'BUENO': pct>=40?'REGULAR':'DEFICIENTE';
+
+    // Actualizar gráficos
+    barChart.options.scales.y.max = els.small.checked ? 3 : 5;
+    barChart.data.datasets[0].data = [subCob, subApe]; 
+    barChart.update();
+    
+    const order = ['C1','C2','C3','C4','C5','A1','A2','A3','A4','A5'];
+    radarChart.data.datasets[0].data = order.map(k=> {
+      if (['C2','C3','C4','C5'].includes(k)) {
+        return (els.small.checked && (k==='C4'||k==='C5')) ? 0 : eff(k);
+      }
+      return (scores[k]??0);
+    });
+    radarChart.update();
+  }
+
+  // listeners
+  document.querySelectorAll('.sel').forEach(sel=>{
+    const tr = sel.closest('tr'); 
+    const key = tr.dataset.key; 
+    scores[key] = 0;
+    
+    sel.addEventListener('change', ()=>{
+      const value = parseFloat(sel.value);
+      scores[key] = value;
+      
+      // Validar evidencia
+      validateEvidence(key, value);
+      
+      applyC1Rule(); 
+      applySmallCountry(); 
+      recompute(); 
+    });
+  });
+
+  // Listeners para evidencias
+  document.querySelectorAll('.evidence-input').forEach(input => {
+    const tr = input.closest('tr');
+    const key = tr.dataset.key;
+    evidences[key] = '';
+    
+    input.addEventListener('input', () => {
+      evidences[key] = input.value;
+      // Si hay valor, quitar advertencia
+      if (input.value.trim() !== '') {
+        input.classList.remove('border-red-500');
+        input.placeholder = 'URL, captura, justificación';
+      }
+    });
+    
+    input.addEventListener('blur', () => {
+      validateEvidence(key, scores[key] ?? 0);
+    });
+  });
+
+  // Listeners para observaciones
+  document.querySelectorAll('tr[data-key] input:not(.evidence-input)').forEach((input, index) => {
+    if (index % 2 === 1) { // Solo los inputs de observaciones (cada segundo input en la fila)
+      const tr = input.closest('tr');
+      const key = tr.dataset.key;
+      observations[key] = '';
+      
+      input.addEventListener('input', () => {
+        observations[key] = input.value;
+      });
+    }
+  });
+
+  els.small.addEventListener('change', ()=>{applySmallCountry();recompute();});
+  document.querySelector('tr[data-key="C1"] select').dispatchEvent(new Event('change'));
+
+  // ——— Excel
+  document.getElementById('btnExcel').addEventListener('click', ()=>{
+    const E = id => document.getElementById(id).value||'';
+    const evalAOA = [
+      ['ID',E('m-id')],['Dataset',E('m-dataset')],['Organización',E('m-org')],['URL del Dataset',E('m-url')],
+      ['Fecha publicación',E('m-fpub')],['Fecha modificación',E('m-fmod')],['Etiquetas/Grupo',E('m-tags')],
+      ['Categoría ODIN',E('m-cat')],['Fecha revisión',E('m-frev')],['País pequeño',els.small.checked?'Sí':'No'],[],
+      ['Código','Elemento','Criterio de Validación','Tipo','Referencia ODIN','Selección','Puntuación','Evidencia / Comentarios', 'Observaciones']
+    ];
+    
+    document.querySelectorAll('tbody tr[data-key]').forEach(tr=>{
+      const k = tr.dataset.key;
+      const tds = tr.querySelectorAll('td'); 
+      const sel = tr.querySelector('select').value;
+      const selText = tr.querySelector('select').options[tr.querySelector('select').selectedIndex].text;
+      
+      let punt = scores[k]??0; 
+      if(['C2','C3','C4','C5'].includes(k)) punt = eff(k);
+      
+      const ev = tr.querySelector('.evidence-input') ? tr.querySelector('.evidence-input').value : '';
+      const obs = tr.querySelectorAll('input')[1] ? tr.querySelectorAll('input')[1].value : '';
+      
+      evalAOA.push([
+        k,
+        tds[1].innerText,
+        tds[2].innerText,
+        tds[3].innerText,
+        tds[4].innerText,
+        selText,
+        punt,
+        ev,
+        obs
+      ]);
+    });
+    
+    evalAOA.push([],
+      ['Subtotal Cobertura','','','','','',document.getElementById('subCob').textContent,'',''],
+      ['Subtotal Apertura','','','','','',document.getElementById('subApe').textContent,'',''],
+      ['TOTAL','','','','','',document.getElementById('total').textContent,'',''],
+      ['Denominador','','','','','',document.getElementById('denInfo').textContent.replace('Denominador: ',''),'',''],
+      ['% Cumplimiento','','','','','',document.getElementById('pct').textContent,'',''],
+      ['Nivel','','','','','',document.getElementById('nivel').textContent,'','']
+    );
+    
+    const ws = XLSX.utils.aoa_to_sheet(evalAOA);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Evaluacion'); 
+    XLSX.writeFile(wb, 'Instrumento_ODIN_Salud.xlsx');
+  });
+
+  // ——— PDF con formato idéntico al ejemplo
+  document.getElementById('btnPDF').addEventListener('click', async ()=>{
+    // asegurar render de charts
+    if(window.Chart){ barChart.update(); radarChart.update(); }
+    await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,60)));
+    const barImg = document.getElementById('barChart').toDataURL('image/png',1.0);
+    const radImg = document.getElementById('radarChart').toDataURL('image/png',1.0);
+
+    // Fecha actual para el informe
+    const today = new Date();
+    const fechaInforme = today.toISOString().split('T')[0].split('-').reverse().join('-');
+    
+    // Encabezado con categoría y fecha
+    const header = [
+      {text: 'Informe de Evaluación ODIN – Salud', style: 'header'},
+      {text: document.getElementById('m-cat').value + '\nFecha de informe: ' + fechaInforme, style: 'subheader'},
+      {text: '\n'}
+    ];
+
+    // Tabla de resumen
+    const resumenTable = {
+      table: {
+        widths: ['*', '*'],
+        body: [
+          [
+            {text: 'Subtotal Cobertura', bold: true},
+            document.getElementById('subCob').textContent + ' / 5'
+          ],
+          [
+            {text: 'Subtotal Apertura', bold: true},
+            document.getElementById('subApe').textContent + ' / 5'
+          ],
+          [
+            {text: 'TOTAL', bold: true},
+            document.getElementById('total').textContent + ' / ' + (els.small.checked ? '8' : '10')
+          ],
+          [
+            {text: 'Cumplimiento', bold: true},
+            document.getElementById('pct').textContent
+          ],
+          [
+            {text: 'Nivel', bold: true},
+            document.getElementById('nivel').textContent
+          ],
+          [
+            {text: 'País pequeño (excluir C4/C5)', bold: true},
+            document.getElementById('smallCountry').checked ? 'Sí' : 'No'
+          ]
+        ]
+      },
+      layout: 'noBorders',
+      margin: [0, 0, 0, 10]
+    };
+
+    // Validez de la categoría
+    const validezCategoria = {
+      text: [
+        {text: 'Validez de la categoría: ', bold: true},
+        `ODIN considera los indicadores de salud reproductiva y materna dentro del dominio Health Outcomes. Por lo tanto, la categoría ${document.getElementById('m-cat').value} es válida para este tipo de datos publicados por el MSPBS.\n\n`,
+        {text: 'Fuente metodológica: ', bold: true},
+        'ODIN 2024/25 Methodology (Open Data Watch).\n\n'
+      ],
+      margin: [0, 0, 0, 10]
+    };
+
+    // Metadatos del dataset
+    const metaRows = [
+      ['ID:', document.getElementById('m-id').value],
+      ['Dataset:', document.getElementById('m-dataset').value],
+      ['Organización:', document.getElementById('m-org').value],
+      ['URL del Dataset:', document.getElementById('m-url').value],
+      ['Fecha publicación:', document.getElementById('m-fpub').value],
+      ['Fecha modificación:', document.getElementById('m-fmod').value],
+      ['Etiquetas/Grupo:', document.getElementById('m-tags').value],
+      ['Categoría ODIN:', document.getElementById('m-cat').value],
+      ['Fecha revisión:', document.getElementById('m-frev').value]
+    ];
+    
+    const metaTable = {
+      table: {
+        headerRows: 1,
+        widths: [120, '*'],
+        body: [
+          [{text: 'Metadatos del Dataset', colSpan: 2, bold: true}, {}],
+          ...metaRows
+        ]
+      },
+      layout: 'lightHorizontalLines',
+      margin: [0, 0, 0, 10]
+    };
+
+    // Resultados por indicador
+    const indicadoresTitle = {text: 'Resultados por Indicador (con Evidencias)', style: 'sectionTitle'};
+    
+    const indicadoresContent = [];
+    document.querySelectorAll('tbody tr[data-key]').forEach(tr => {
+      const key = tr.dataset.key;
+      const tds = tr.querySelectorAll('td');
+      const tipo = tds[3].innerText;
+      const referencia = tds[4].innerText;
+      const seleccion = tr.querySelector('select').options[tr.querySelector('select').selectedIndex].text;
+      let puntuacion = scores[key] ?? 0;
+      if (['C2','C3','C4','C5'].includes(key)) puntuacion = eff(key);
+      const evidencia = tr.querySelector('.evidence-input') ? tr.querySelector('.evidence-input').value : '';
+      const observacion = tr.querySelectorAll('input')[1] ? tr.querySelectorAll('input')[1].value : '';
+      
+      indicadoresContent.push(
+        {
+          text: [
+            {text: `${tds[1].innerText} [${key}]`, bold: true},
+            {text: ` • ${tipo} • ${referencia}`, bold: false}
+          ],
+          margin: [0, 5, 0, 0]
+        },
+        {
+          text: [
+            {text: 'Criterio: ', bold: true},
+            tds[2].innerText
+          ],
+          margin: [0, 0, 0, 0]
+        },
+        {
+          text: [
+            {text: 'Selección: ', bold: true},
+            seleccion,
+            {text: ' | Puntuación: ', bold: true},
+            String(puntuacion)
+          ],
+          margin: [0, 0, 0, 0]
+        },
+        {
+          text: [
+            {text: 'Evidencia:\n', bold: true},
+            evidencia || 'No se proporcionó evidencia.'
+          ],
+          margin: [0, 0, 0, 0]
+        },
+        {
+          text: [
+            {text: 'Observaciones:\n', bold: true},
+            observacion || 'No se proporcionaron observaciones.'
+          ],
+          margin: [0, 0, 0, 10]
+        }
+      );
+    });
+
+    // Gráficos
+    const graficos = [
+      {text: 'Resumen Visual', style: 'sectionTitle'},
+      {
+        columns: [
+          {
+            width: '50%',
+            stack: [
+              {text: 'Puntaje por bloque', alignment: 'center', bold: true},
+              {image: barImg, width: 240, height: 160, alignment: 'center'}
+            ]
+          },
+          {
+            width: '50%',
+            stack: [
+              {text: 'Distribución por criterio (0-1)', alignment: 'center', bold: true},
+              {image: radImg, width: 240, height: 160, alignment: 'center'}
+            ]
+          }
+        ],
+        columnGap: 10,
+        margin: [0, 0, 0, 10]
+      }
+    ];
+
+    // Notas metodológicas
+    const notas = [
+      {text: 'Notas metodológicas', style: 'sectionTitle'},
+      {
+        ul: [
+          'C1=0 ⇒ el puntaje TOTAL se establece en 0.',
+          'C2–C5 se limitan a C1 (min(Cx, C1)).',
+          'Si "País pequeño" está activado, C4–C5 quedan excluidos del cálculo y del denominador.',
+          'Series: 2014–2023 (histórico) y 2019–2023 (reciente).',
+          'Evidencias: mantener URLs/capturas para trazabilidad.',
+          'Escala de evaluación: 0 = No cumple, 0.5 = Cumple parcialmente, 1 = Cumple totalmente.'
+        ],
+        margin: [0, 0, 0, 0]
+      }
+    ];
+
+    // Definición del documento
+    const docDefinition = {
+      pageSize: 'A4',
+      pageMargins: [40, 40, 40, 40],
+      footer: (currentPage, pageCount) => ({
+        text: `Página ${currentPage} de ${pageCount}`,
+        alignment: 'right',
+        margin: [0, 10, 40, 0],
+        fontSize: 9,
+        color: '#6b7280'
+      }),
+      content: [
+        ...header,
+        resumenTable,
+        validezCategoria,
+        metaTable,
+        indicadoresTitle,
+        ...indicadoresContent,
+        ...graficos,
+        ...notas
+      ],
+      styles: {
+        header: {
+          fontSize: 16,
+          bold: true,
+          margin: [0, 0, 0, 5]
+        },
+        subheader: {
+          fontSize: 12,
+          margin: [0, 0, 0, 10]
+        },
+        sectionTitle: {
+          fontSize: 13,
+          bold: true,
+          margin: [0, 10, 0, 5]
+        }
+      }
+    };
+
+    pdfMake.createPdf(docDefinition).download('Informe_ODIN_Salud.pdf');
+  });
+});
+</script>
+</body>
+</html>
